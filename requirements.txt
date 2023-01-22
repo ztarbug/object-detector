@@ -1,2 +1,5 @@
 jupyter
 tensorflow>=2.10.0
+opencv-python
+matplotlib
+numpy

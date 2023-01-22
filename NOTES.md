@@ -1,26 +1,20 @@
-# Setting up the EfficientDet project by Google 
+# How to use EfficientDet
 
-## Load pre-trained model and export as Tensorflow SavedModel (all inside the efficientdet automl repo)
-- Clone https://github.com/google/automl/tree/master/efficientdet
-- Create and activate virtual Python environment if you like (e.g. `python3 -m venv .venv`, followed by `source .venv/bin/activate`)
-- Install dependencies
-  ```
-  pip install numpy
-  sudo apt install python3-dev
-  pip install -r requirements.txt
-  ```
-- Download pre-trained model of desired size (refer to efficientdet repo above; use the "ckpt" link)
-- Convert model into SavedModel
-  `python model_inspect.py --runmode=saved_model --model_name=efficientdet-d0 --ckpt_path=efficientdet-d0 --saved_model_dir=savedmodeldir`
-- The SavedModel is now in `./savedmodeldir`, you can move that directory into this repository to make things easier (this is what below instruction will assume)
-
-## Set up the experimenting notebook in this repository
+## Prerequisites
+- Install opencv on your system for the Python bindings to work\
+  `sudo apt install libopencv-dev`
 - Create and activate virtual Python environment if you like (e.g. `python3 -m venv .venv`, followed by `source .venv/bin/activate`)
 - Install dependencies\
   `pip install -r requirements.txt`
 
+## Download and prepare model
+- Download EfficientDet model of desired size from the TF2 detection zoo\
+  https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md
 
-# How-To progress
-- Does our seemingly loaded model work or not?
-- Look through the code of Google`s repository for how to load the model properly
-- Try .h5 file? (which is apparently an old format to be used with Keras)
+- Extract .tar.gz file
+  `tar xvf efficientdet_d*.tar.gz`
+
+## Annotate some images
+- Put some images into `./images` or somewhere else (if you choose a custom directory you have to supply it to the script below)
+- Run `object_detect.py` (Run it with `--help` to get some usage hints)
+- Find your annotated images in `./annotated_images` (by default)
