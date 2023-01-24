@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import time
 from os.path import basename, isfile, join, splitext
 
 import cv2
@@ -45,10 +46,22 @@ def tf_box_to_bbox(image, prediction_box):
 def tf_coord_to_pixel(coord, dim_size):
   return int(tf.cast(coord * tf.cast(dim_size, tf.float32), tf.int32))
 
-def draw_bbox(image, bbox, class_name):
+def draw_bbox(image, bbox, class_name, score):
   ymin, xmin, ymax, xmax = bbox
-  cv2.rectangle(image, (xmin, ymin), (xmax, ymax), BBOX_COLOR, thickness=2)
-  cv2.putText(image, class_name, (xmin+2, ymax-4), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=BBOX_COLOR, thickness=2)
+
+  avg_shape = int(tf.cast(min(tf.shape(image).numpy()[:2]), tf.int32))
+  scaling_factor = max(1, int(round(avg_shape * 0.001, 0)))
+  
+  cv2.rectangle(image, (xmin, ymin), (xmax, ymax), BBOX_COLOR, thickness=2*scaling_factor)
+  cv2.putText(
+    image, 
+    f'{class_name} ({round(float(score)*100,2)}%)', 
+    (xmin+3*scaling_factor, ymax-5*scaling_factor), 
+    cv2.FONT_HERSHEY_SIMPLEX, 
+    fontScale=1*scaling_factor, 
+    color=BBOX_COLOR, 
+    thickness=2*scaling_factor
+  )
 
 def save_image(image_rgb, path):
   r, g, b = cv2.split(image_rgb)
@@ -147,7 +160,7 @@ COCO_CLASSNAMES = {
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('-i', '--image-dir', help='Directory where to look for images to annotate (default: "./images")', default='./images')
-  parser.add_argument('-m', '--model-dir', help='Directory where to find the saved model (default: the first directory starting with "efficientdet_d")')
+  parser.add_argument('-m', '--model-dir', help='Path to the "saved_model" directory of the model to run (default: a directory starting with "efficientdet_d")')
   parser.add_argument('-o', '--output-dir', help='Directory where to put annotated images (default: "./annotated_images")', default='./annotated_images')
   parser.add_argument('-c', '--min-confidence', help='Only include objects if the confidence of detection is higher than this (range 0-100 percent)', default=30, type=int)
   args = vars(parser.parse_args())
@@ -168,11 +181,13 @@ if __name__ == '__main__':
 
   for image_path in IMAGES:
     image = load_image(image_path)
+    start_time = time.time()
     prediction = predict(eff_det, image, MIN_SCORE)
+    print(f'Inference time: {time.time() - start_time} s')
 
-    for prediction_box, class_id in zip(prediction['boxes'], prediction['classes']):
+    for prediction_box, class_id, score in zip(prediction['boxes'], prediction['classes'], prediction['scores']):
       bbox = tf_box_to_bbox(image, prediction_box)
-      draw_bbox(image, bbox, COCO_CLASSNAMES[int(class_id)])
+      draw_bbox(image, bbox, COCO_CLASSNAMES[int(class_id)], score)
 
     output_path = join(OUTPUT_DIR, basename(image_path))
     save_image(image, output_path)
