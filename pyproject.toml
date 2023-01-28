@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "detect"
+version = "0.0.1"
+dependencies = [
+    "jupyter",
+    "tensorflow>=2.10.0",
+    "opencv-python",
+    "matplotlib",
+    "numpy",
+    'importlib-metadata; python_version<"3.8"',
+]
