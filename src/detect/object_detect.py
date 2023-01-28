@@ -7,16 +7,11 @@ from os.path import basename, isfile, join, splitext
 import cv2
 import numpy as np
 import tensorflow as tf
+from modelfiles import get_model_dir
 
-MODEL_PATH_PATTERN = re.compile(r'^efficientdet_d.*')
 BBOX_COLOR = (255, 0, 0)
 IMAGE_FILE_EXTENSIONS = ['.jpg', '.png']
 
-
-def model_dir(ref_path='.'):
-  path = next(filter(lambda p: os.path.isdir(p) and MODEL_PATH_PATTERN.match(p), os.listdir(ref_path)), None)
-  assert path is not None, f'Expected model directory matching "{MODEL_PATH_PATTERN.pattern}" in {ref_path}'
-  return path
 
 def load_image(path):
   image_bgr = cv2.imread(path)
@@ -163,12 +158,14 @@ if __name__ == '__main__':
   parser.add_argument('-m', '--model-dir', help='Path to the "saved_model" directory of the model to run (default: a directory starting with "efficientdet_d")')
   parser.add_argument('-o', '--output-dir', help='Directory where to put annotated images (default: "./annotated_images")', default='./annotated_images')
   parser.add_argument('-c', '--min-confidence', help='Only include objects if the confidence of detection is higher than this (range 0-100 percent)', default=30, type=int)
+  parser.add_argument('-s', '--model-size', help='Which EfficientDet model size should be downloaded (range [0..7])', default=0, type=int)
+  parser.add_argument('-d', '--download', help='Should the EfficientDet model be automatically downloaded if not found in the provided directory?', default=False, type=bool)
   args = vars(parser.parse_args())
 
   if args['model_dir'] is None:
-    SAVED_MODEL_DIR = os.path.join(model_dir(), 'saved_model')
+    SAVED_MODEL_DIR = os.path.join(get_model_dir(model_size=args['model_size'], auto_download=args['download']), 'saved_model')
   else:
-    SAVED_MODEL_DIR = args['model_dir']
+    SAVED_MODEL_DIR = os.path.join(get_model_dir(model_dir=args['model_dir'], model_size=args['model_size'], auto_download=args['download']), 'saved_model')
 
   OUTPUT_DIR = args['output_dir']
   IMAGES = get_images_in_path(args['image_dir'])
