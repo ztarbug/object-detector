@@ -1,0 +1,6 @@
+*.pt
+.vscode
+*.onnx
+out
+*.avi
+*.mp4
