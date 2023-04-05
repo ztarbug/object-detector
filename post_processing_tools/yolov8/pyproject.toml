@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "yolov8"
+version = "0.1.0"
+description = ""
+authors = ["flonix8 <flstanek@googlemail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+torch = "^2.0.0"
+torchvision = "^0.15.1"
+opencv-python = "^4.7.0.72"
+ultralytics = "^8.0.63"
+onnxruntime = "^1.14.1"
+onnx = "^1.13.1"
+numpy = "^1.24.2"
+
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
