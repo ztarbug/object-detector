@@ -1,6 +1,8 @@
 import os
 import sys
 import tarfile
+import time
+import datetime
 
 from urllib import request
 
@@ -24,7 +26,7 @@ def main():
     check_args()
     target_file = sys.argv[1]
     check_project_structure(target_file)
-    model = download_tf_model(1)
+    model = download_tf_model(2)
     do_inferencing(model, target_file)
 
 def check_args():
@@ -67,7 +69,7 @@ def download_tf_model(efficientDet_version):
     tar.close()
 
     extracted_model_path = model_path + '/' + file_name.split('.')[0] + '/saved_model'
-    return extracted_model_path           
+    return extracted_model_path
 
 def detect_objects(frame, efficientdet):
     frame = tf.constant(frame, dtype=tf.uint8)
@@ -90,16 +92,26 @@ def do_inferencing(downloaded_model_path, video_path):
     efficientdet = tf.saved_model.load(downloaded_model_path)
 
     cap = cv2.VideoCapture(video_path)
-    out = cv2.VideoWriter('out/outfile.avi', cv2.VideoWriter_fourcc('M','J','P','G'), 24, (1920,1080))
-    cv2.namedWindow("output", cv2.WINDOW_NORMAL)
+    length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps    = cap.get(cv2.CAP_PROP_FPS)
 
+    output_filename = os.path.basename(video_path)
+    time_prefix = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+    out = cv2.VideoWriter('out/' + time_prefix + "-" + output_filename, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width,height))
+    #cv2.namedWindow("output", cv2.WINDOW_NORMAL)
+
+    f = 1
     while(cap.isOpened()):
         ret, frame = cap.read()
         if ret == True:
             #boxes, scores, classes = detection.detect(frame)
+            start = time.time()
             boxes, scores, classes = detect_objects(frame, efficientdet)
 
             det_results = "Detected: "
+
             for i, box in enumerate(boxes):
                 score = float(scores[i])
                 if score >= 0.3:
@@ -109,29 +121,34 @@ def do_inferencing(downloaded_model_path, video_path):
                     else:
                         break
                     y2, x1, y1, x2 = box
-                    x1 = int(tf.keras.backend.get_value(x1) * 1920)
-                    x2 = int(tf.keras.backend.get_value(x2) * 1920)
-                    y1 = int(tf.keras.backend.get_value(y1) * 1080)
-                    y2 = int(tf.keras.backend.get_value(y2) * 1080)
-                    #det_results += " " + name + "-" + str(score) + ":(" + str(x1) + "," + str(y1) + ")-(" + str(x2) + "," + str(y2) + "),  "
+                    x1 = int(tf.keras.backend.get_value(x1) * width)
+                    x2 = int(tf.keras.backend.get_value(x2) * width)
+                    y1 = int(tf.keras.backend.get_value(y1) * height)
+                    y2 = int(tf.keras.backend.get_value(y2) * height)
+                    det_results += " " + name + "-" + str(round(score, 2)) + ":(" + str(x1) + "," + str(y1) + ")-(" + str(x2) + "," + str(y2) + "),  "
 
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), thickness=3)
+                    font_scale = max(x2-x1, y2-y1) / 200.0
+                    thickness = int(max(x2-x1, y2-y1) / 100.0)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), thickness)
                     cv2.putText(
                         img = frame,
                         text = name + ": " + str(round(score, 2)),
                         org = (x1+3,y1-5),
                         fontFace = cv2.FONT_HERSHEY_DUPLEX,
-                        fontScale = 1.0,
+                        fontScale = font_scale,
                         color = (125, 246, 55),
                         thickness = 3
                     )
-            out.write(frame)
+            end = time.time()
 
-            #print(det_results + "\n")
-            cv2.imshow("output",frame)
+            out.write(frame)
+            duration = end-start
+            print("Frame " + str(f) + "/" + str(length) + " (" +  str(duration) + ") |" + det_results + "\n")
+            f += 1
+            #cv2.imshow("output",frame)
             # Press Q on keyboard to  exit
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                break        
+            #if cv2.waitKey(25) & 0xFF == ord('q'):
+            #    break        
         else: 
             break
 
