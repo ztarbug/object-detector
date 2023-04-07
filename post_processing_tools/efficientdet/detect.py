@@ -26,7 +26,7 @@ def main():
     check_args()
     target_file = sys.argv[1]
     check_project_structure(target_file)
-    model = download_tf_model(2)
+    model = download_tf_model(4)
     do_inferencing(model, target_file)
 
 def check_args():
@@ -99,25 +99,29 @@ def do_inferencing(downloaded_model_path, video_path):
 
     output_filename = os.path.basename(video_path)
     time_prefix = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-    out = cv2.VideoWriter('out/' + time_prefix + "-" + output_filename, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width,height))
+    out = cv2.VideoWriter('out/' + time_prefix + "-" + output_filename, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
     #cv2.namedWindow("output", cv2.WINDOW_NORMAL)
 
     f = 1
+    all_time_statistics = {}
     while(cap.isOpened()):
         ret, frame = cap.read()
         if ret == True:
-            #boxes, scores, classes = detection.detect(frame)
             start = time.time()
             boxes, scores, classes = detect_objects(frame, efficientdet)
 
             det_results = "Detected: "
-
+            object_count = {}
             for i, box in enumerate(boxes):
                 score = float(scores[i])
                 if score >= 0.3:
                     class_id = int(classes[i])
                     if class_id in my_objects:
                         name=my_objects[class_id]
+                        if name in object_count:
+                            object_count[name] += 1
+                        else:
+                            object_count[name] = 1
                     else:
                         break
                     y2, x1, y1, x2 = box
@@ -139,11 +143,13 @@ def do_inferencing(downloaded_model_path, video_path):
                         color = (125, 246, 55),
                         thickness = 3
                     )
+                all_time_statistics = create_overall_statistics(all_time_statistics, object_count)
+                draw_statistics(frame, all_time_statistics, object_count)
             end = time.time()
 
             out.write(frame)
             duration = end-start
-            print("Frame " + str(f) + "/" + str(length) + " (" +  str(duration) + ") |" + det_results + "\n")
+            print("Frame " + str(f) + "/" + str(length) + " (" +  str(round(duration,3)) + ") |" + det_results + "\n")
             f += 1
             #cv2.imshow("output",frame)
             # Press Q on keyboard to  exit
@@ -154,5 +160,62 @@ def do_inferencing(downloaded_model_path, video_path):
 
     cap.release()
     cv2.destroyAllWindows()
+
+def create_overall_statistics(all, current):
+    for object in current:
+        if not object in all:
+            all[object] = current[object]
+        else:
+            if all[object] < current[object]:
+                all[object] = current[object]
+    
+    return all
+
+def draw_statistics(frame, all, current):
+    first_column = 10
+    second_column = 290
+    cv2.putText(
+        img = frame,
+        text = "Statistics Frame",
+        org = (first_column,50),
+        fontFace = cv2.FONT_HERSHEY_DUPLEX,
+        fontScale = 1.0,
+        color = (125, 246, 55),
+        thickness = 2
+    )
+    offset = 30
+    for object in current:
+        cv2.putText(
+            img = frame,
+            text = object + ": " + str(current[object]),
+            org = (first_column,50 + offset),
+            fontFace = cv2.FONT_HERSHEY_DUPLEX,
+            fontScale = 1.0,
+            color = (125, 246, 55),
+            thickness = 2
+        )
+        offset += 30
+
+    cv2.putText(
+        img = frame,
+        text = "Statistics Overall",
+        org = (second_column,50),
+        fontFace = cv2.FONT_HERSHEY_DUPLEX,
+        fontScale = 1.0,
+        color = (30, 30, 30),
+        thickness = 2
+    )
+    offset = 30
+    for object in all:
+        cv2.putText(
+            img = frame,
+            text = object + ": " + str(all[object]),
+            org = (second_column,50 + offset),
+            fontFace = cv2.FONT_HERSHEY_DUPLEX,
+            fontScale = 1.0,
+            color = (30, 30, 30),
+            thickness = 2
+        )
+        offset += 30
 
 main()
