@@ -21,12 +21,13 @@ my_objects = {1:"Person", 2:"Bicycle", 3:"Car", 6:"Bus", 8:"Truck"}
 
 model_path = 'model'
 output_path = 'out'
+efficient_det_version = 4
 
 def main():
     check_args()
     target_file = sys.argv[1]
     check_project_structure(target_file)
-    model = download_tf_model(4)
+    model = download_tf_model(efficient_det_version)
     do_inferencing(model, target_file)
 
 def check_args():
@@ -97,9 +98,11 @@ def do_inferencing(downloaded_model_path, video_path):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps    = cap.get(cv2.CAP_PROP_FPS)
 
+    start_time = datetime.datetime.now()
+
     output_filename = os.path.basename(video_path)
-    time_prefix = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-    out = cv2.VideoWriter('out/' + time_prefix + "-" + output_filename, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
+    time_prefix = start_time.strftime("%Y%m%d-%H%M")
+    out = cv2.VideoWriter('out/' + time_prefix + "-ED-" + str(efficient_det_version) + "-" + output_filename, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
     #cv2.namedWindow("output", cv2.WINDOW_NORMAL)
 
     f = 1
@@ -149,7 +152,7 @@ def do_inferencing(downloaded_model_path, video_path):
 
             out.write(frame)
             duration = end-start
-            print("Frame " + str(f) + "/" + str(length) + " (" +  str(round(duration,3)) + ") |" + det_results + "\n")
+            print("Frame " + str(f) + "/" + str(length) + " (" +  str(round(duration,3)) + "s) " + str(length - f)  + " | " + det_results + "\n")
             f += 1
             #cv2.imshow("output",frame)
             # Press Q on keyboard to  exit
@@ -157,6 +160,8 @@ def do_inferencing(downloaded_model_path, video_path):
             #    break        
         else: 
             break
+    end_time = datetime.datetime.now()
+    print(end_time - start_time)
 
     cap.release()
     cv2.destroyAllWindows()
