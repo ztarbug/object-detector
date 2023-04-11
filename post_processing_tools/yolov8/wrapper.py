@@ -34,7 +34,7 @@ class Wrapper(torch.nn.Module):
         return y
     
     @staticmethod
-    def _non_max_suppression(pred, orig_img, conf_threshold=0.5, iou_threshold=0.4, max_det=300):
+    def _non_max_suppression(pred, orig_img, conf_threshold=0.1, iou_threshold=0.4, max_det=300):
         pred.squeeze_()
         boxes, scores, cls = pred[:4, :].T, pred[4:, :].amax(0), pred[4:, :].argmax(0).to(torch.int)
         keep = scores.argsort(0, descending=True)[:max_det]

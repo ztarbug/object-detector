@@ -19,7 +19,8 @@ logging.basicConfig(format='%(asctime)s - %(message)s')
 def get_classes():
     try:
         with open('yolov8_classes.json', 'r') as f:
-            return json.load(f)
+            js = json.load(f)
+            return {int(k):v for k,v in js.items()}
     except OSError as e:
         logging.error(f'Could not load yolo classes from file. Exception: {e}')
         exit(1)
