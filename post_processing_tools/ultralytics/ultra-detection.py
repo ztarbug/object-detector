@@ -48,6 +48,7 @@ def do_inferencing(source):
             prediction = model.predict(frame)
             res_plotted = prediction[0].plot()
             cv2.imshow('output', res_plotted)
+
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break 
             out.write(res_plotted)
@@ -55,6 +56,8 @@ def do_inferencing(source):
             print("couldn't read next frame")
             break
     
+    end_time = datetime.datetime.now()
+    print("Finished post processing in " + str(end_time - start_time))
     cap.release()
     cv2.destroyAllWindows()
 
