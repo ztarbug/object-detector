@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "ultralytics-process"
+version = "0.1.0"
+description = ""
+authors = ["Markus Zarbock <markus.zarbock@starwit.de>", "Florian Stanek <florian.stanek@starwit.de>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+ultralytics = "^8.0.77"
+numpy = "^1.24.2"
+tqdm = "^4.65.0"
+opencv-python = "^4.7.0.72"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
