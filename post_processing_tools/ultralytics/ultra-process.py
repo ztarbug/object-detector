@@ -5,12 +5,16 @@ import os
 import datetime
 import argparse
 import logging
+import signal
 
 from pprint import pprint
 from ultralytics import YOLO
 import cv2
 
-logging.basicConfig(format='%(asctime)s - %(message)s')
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger()
+
+running = True
 
 task_suffixes = {
     'detect': '',
@@ -20,6 +24,7 @@ task_suffixes = {
 }
 
 def do_inferencing(source, model_size, task):
+    global running
     if source.isdigit():
         source = int(source)
     cap    = cv2.VideoCapture(source)
@@ -30,29 +35,29 @@ def do_inferencing(source, model_size, task):
     start_time = datetime.datetime.now()
     time_prefix = start_time.strftime('%Y-%m-%dT%H-%M-%S')
     output_filename = os.path.join('out', f'{task}-{model_size}-{time_prefix}-{source_to_filename(source)}.mp4')
-    logging.info(f'Writing to output file: {output_filename}')
+    logger.info(f'Writing to output file: {output_filename}')
     out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
 
     cv2.namedWindow("output", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("output", 800, 600)
 
     model = YOLO(model_name(model_size, task))
-    while(cap.isOpened()):
+    while cap.isOpened() and running:
         ret, frame = cap.read()
         if ret == True:
             prediction = model.predict(frame)
             res_plotted = prediction[0].plot()
             cv2.imshow('output', res_plotted)
 
-            if cv2.waitKey(25) & 0xFF == ord('q'):
+            if cv2.waitKey(1) & 0xFF == ord('q'):
                 break 
             out.write(res_plotted)
         else:
-            logging.error("couldn't read next frame")
+            logger.error("couldn't read next frame")
             break
     
     end_time = datetime.datetime.now()
-    logging.info(f'Finished post processing in {end_time - start_time}s')
+    logger.info(f'Finished post processing in {end_time - start_time}s')
     cap.release()
     cv2.destroyAllWindows()
 
@@ -77,7 +82,17 @@ if __name__ == '__main__':
     arg_parser.add_argument('videosource', help='any video source opencv understands, e.g. 0,1,... for usb cams, "rtsp://..." for RTSP streams, /path/video.mp4 for video file')
     arg_parser.add_argument('-m', '--model-size', choices=['n', 's', 'm', 'l', 'x'], default='n', help='the size of the model to use (nano, small, medium, large, xlarge); defaults to "nano"')
     arg_parser.add_argument('-t', '--task', choices=['detect', 'segment', 'classify', 'pose'], default='detect', help='the task to perform; defaults to "detect"')
-    args = arg_parser.parse_args()   
+    args = arg_parser.parse_args()
+
+    def signal_handler(signum, _):
+        signame = signal.Signals(signum).name
+        logger.warning(f'Received {signame}. Exiting...')
+        global running
+        running = False
+
+    logger.info("Setting up signal handlers...")
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
     if not os.path.isdir('out'):
         os.mkdir('out')
