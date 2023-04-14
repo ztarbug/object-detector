@@ -1,17 +1,18 @@
 #!/usr/bin/env python
 
-import sys
-import os
-import datetime
 import argparse
+import datetime
 import logging
+import os
 import signal
+from time import time
 
-from pprint import pprint
-from ultralytics import YOLO
 import cv2
+import tqdm
+from stats import SpeedStats
+from ultralytics import YOLO
 
-logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger()
 
 running = True
@@ -27,10 +28,11 @@ def do_inferencing(source, model_size, task, preview):
     global running
     if source.isdigit():
         source = int(source)
-    cap    = cv2.VideoCapture(source)
-    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps    = cap.get(cv2.CAP_PROP_FPS)
+    cap         = cv2.VideoCapture(source)
+    width       = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height      = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps         = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
 
     start_time = datetime.datetime.now()
     time_prefix = start_time.strftime('%Y-%m-%dT%H-%M-%S')
@@ -38,15 +40,22 @@ def do_inferencing(source, model_size, task, preview):
     logger.info(f'Writing to output file: {output_filename}')
     out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
 
+    pbar = tqdm.tqdm(total=(frame_count if frame_count != -1 else float("inf")), leave=False, unit='frame')
+    speed_stats = SpeedStats()
+
+    model = YOLO(model_name(model_size, task))
+
     if preview:
         cv2.namedWindow("output", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("output", 800, 600)
 
-    model = YOLO(model_name(model_size, task))
+    frame_idx = 0
+    last_stats_time = time()
+    last_stats_idx = 0
     while cap.isOpened() and running:
         ret, frame = cap.read()
         if ret == True:
-            prediction = model.predict(frame)
+            prediction = model.predict(frame, verbose=False)
             res_plotted = prediction[0].plot()
             
             if preview:
@@ -55,6 +64,16 @@ def do_inferencing(source, model_size, task, preview):
                     break 
 
             out.write(res_plotted)
+
+            # Stats and status bar update
+            speed_stats.append(prediction[0])
+            if time() - last_stats_time > 1:
+                pbar.set_postfix(speed_stats.get_mov_avg(window_size=frame_idx-last_stats_idx))
+                last_stats_time = time()
+                last_stats_idx = frame_idx
+
+            pbar.update(1)
+            frame_idx += 1
         else:
             logger.error("couldn't read next frame")
             break
@@ -63,6 +82,7 @@ def do_inferencing(source, model_size, task, preview):
     logger.info(f'Finished post processing in {end_time - start_time}s')
     cap.release()
     cv2.destroyAllWindows()
+    pbar.close()
 
 def model_name(size, task):
     suffix = task_suffixes[task]
@@ -71,14 +91,14 @@ def model_name(size, task):
 def source_to_filename(source):
     # based on which kind of source an according output filename is created here
     if isinstance(source, int):
-        return "USB-CAM-" + str(source) + ".mp4"    
+        return "USB-CAM-" + str(source)     
     if 'rtsp' in source:
         source = source.split('@')[1]
         source = source.split(':')[0]
-        return "rtsp-" + source + ".mp4"
+        return "rtsp-" + source
     if os.path.exists(source) and not os.path.isdir(source):
-        return os.path.basename(source)
-    return "unknown-source.mp4"
+        return os.path.splitext(os.path.basename(source))[0]
+    return "unknown-source"
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser()
@@ -94,7 +114,6 @@ if __name__ == '__main__':
         global running
         running = False
 
-    logger.info("Setting up signal handlers...")
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
