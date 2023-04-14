@@ -23,7 +23,7 @@ task_suffixes = {
     'pose': '-pose',
 }
 
-def do_inferencing(source, model_size, task):
+def do_inferencing(source, model_size, task, preview):
     global running
     if source.isdigit():
         source = int(source)
@@ -38,8 +38,9 @@ def do_inferencing(source, model_size, task):
     logger.info(f'Writing to output file: {output_filename}')
     out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
 
-    cv2.namedWindow("output", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("output", 800, 600)
+    if preview:
+        cv2.namedWindow("output", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("output", 800, 600)
 
     model = YOLO(model_name(model_size, task))
     while cap.isOpened() and running:
@@ -47,10 +48,12 @@ def do_inferencing(source, model_size, task):
         if ret == True:
             prediction = model.predict(frame)
             res_plotted = prediction[0].plot()
-            cv2.imshow('output', res_plotted)
+            
+            if preview:
+                cv2.imshow('output', res_plotted)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break 
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break 
             out.write(res_plotted)
         else:
             logger.error("couldn't read next frame")
@@ -82,6 +85,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('videosource', help='any video source opencv understands, e.g. 0,1,... for usb cams, "rtsp://..." for RTSP streams, /path/video.mp4 for video file')
     arg_parser.add_argument('-m', '--model-size', choices=['n', 's', 'm', 'l', 'x'], default='n', help='the size of the model to use (nano, small, medium, large, xlarge); defaults to "nano"')
     arg_parser.add_argument('-t', '--task', choices=['detect', 'segment', 'classify', 'pose'], default='detect', help='the task to perform; defaults to "detect"')
+    arg_parser.add_argument('-p', '--preview', action='store_true', help='whether to show a live preview window, reduces performance slightly. If the window is in focus, press "q" to exit.')
     args = arg_parser.parse_args()
 
     def signal_handler(signum, _):
@@ -97,4 +101,4 @@ if __name__ == '__main__':
     if not os.path.isdir('out'):
         os.mkdir('out')
 
-    do_inferencing(args.videosource, args.model_size, args.task)
+    do_inferencing(args.videosource, args.model_size, args.task, args.preview)
