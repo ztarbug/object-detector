@@ -9,7 +9,7 @@ from time import time
 
 import cv2
 import tqdm
-from stats import SpeedStats
+from stats import SpeedStats, DetectionStatsWriter
 from ultralytics import YOLO
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -24,7 +24,7 @@ task_suffixes = {
     'pose': '-pose',
 }
 
-def do_inferencing(source, model_size, task, preview):
+def do_inferencing(source, model_size, task, preview, class_list):
     global running
     if source.isdigit():
         source = int(source)
@@ -36,9 +36,15 @@ def do_inferencing(source, model_size, task, preview):
 
     start_time = datetime.datetime.now()
     time_prefix = start_time.strftime('%Y-%m-%dT%H-%M-%S')
-    output_filename = os.path.join('out', f'{task}-{model_size}-{time_prefix}-{source_to_filename(source)}.mp4')
-    logger.info(f'Writing to output file: {output_filename}')
-    out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
+    output_filename = os.path.join('out', f'{task}-{model_size}-{time_prefix}-{source_to_filename(source)}')
+
+    logger.info(f'Writing annotated video to output file: {output_filename}.mp4')
+    out = cv2.VideoWriter(f'{output_filename}.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
+
+    stats_writer = None
+    if class_list is not None:
+        logger.info(f'Writing detection log to file: {output_filename}.csv')
+        stats_writer = DetectionStatsWriter(f'{output_filename}.csv', class_list)
 
     pbar = tqdm.tqdm(total=(frame_count if frame_count != -1 else float("inf")), leave=False, unit='frame')
     speed_stats = SpeedStats()
@@ -55,7 +61,7 @@ def do_inferencing(source, model_size, task, preview):
     while cap.isOpened() and running:
         ret, frame = cap.read()
         if ret == True:
-            prediction = model.predict(frame, verbose=False)
+            prediction = model.predict(frame, verbose=False, tracker='bytetrack.yaml')
             res_plotted = prediction[0].plot()
             
             if preview:
@@ -64,6 +70,10 @@ def do_inferencing(source, model_size, task, preview):
                     break 
 
             out.write(res_plotted)
+
+            # Write detections
+            if stats_writer is not None:
+                stats_writer.write(frame_idx, cap.get(cv2.CAP_PROP_POS_MSEC), prediction[0])
 
             # Stats and status bar update
             speed_stats.append(prediction[0])
@@ -83,6 +93,8 @@ def do_inferencing(source, model_size, task, preview):
     cap.release()
     cv2.destroyAllWindows()
     pbar.close()
+    if stats_writer is not None:
+        stats_writer.close()
 
 def model_name(size, task):
     suffix = task_suffixes[task]
@@ -106,6 +118,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('-m', '--model-size', choices=['n', 's', 'm', 'l', 'x'], default='n', help='the size of the model to use (nano, small, medium, large, xlarge); defaults to "nano"')
     arg_parser.add_argument('-t', '--task', choices=['detect', 'segment', 'classify', 'pose'], default='detect', help='the task to perform; defaults to "detect"')
     arg_parser.add_argument('-p', '--preview', action='store_true', help='whether to show a live preview window, reduces performance slightly. If the window is in focus, press "q" to exit.')
+    arg_parser.add_argument('-l', '--log-classes', type=lambda s: s.split(','), dest='class_list', help='for every frame, log detected objects of these comma-delimited classes (class name must match a class in "yolov8_classes.json") into a sidecar .csv file')
     args = arg_parser.parse_args()
 
     def signal_handler(signum, _):
@@ -120,4 +133,4 @@ if __name__ == '__main__':
     if not os.path.isdir('out'):
         os.mkdir('out')
 
-    do_inferencing(args.videosource, args.model_size, args.task, args.preview)
+    do_inferencing(args.videosource, args.model_size, args.task, args.preview, args.class_list)
