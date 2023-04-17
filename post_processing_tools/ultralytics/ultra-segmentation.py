@@ -1,61 +1,94 @@
+#!/usr/bin/env python
+
+import argparse
 import os
 import sys
+import signal
 import datetime
 
-from pprint import pprint
+import logging
+
 from ultralytics import YOLO
 import cv2
 import numpy as np
 
-output_path = 'out'
-yolov8_model = 'yolov8n-seg.pt'
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger()
+
+running = True
+class_list = [0,2]
+
+dense_map = None
 
 def main():
-    if not os.path.exists(output_path):
-        os.mkdir(output_path)
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('videosource', help='any video source opencv understands, e.g. 0,1,... for usb cams, "rtsp://..." for RTSP streams, /path/video.mp4 for video file')
+    arg_parser.add_argument('-m', '--model-size', choices=['n', 's', 'm', 'l', 'x'], default='n', help='the size of the model to use (nano, small, medium, large, xlarge); defaults to "nano"')
+    arg_parser.add_argument('-p', '--preview', action='store_true', help='whether to show a live preview window, reduces performance slightly. If the window is in focus, press "q" to exit.')
+    arg_parser.add_argument('-o', '--output-path', required=False, default="out", help='where to output processed video files')
+    global args
+    args = arg_parser.parse_args()
+
+    capture_abort()
+
+    global yolov8_model
+    yolov8_model = f'yolov8{args.model_size}-seg.pt'
+
+    check_output_path(args.output_path)
+    do_inferencing(args)
+
+def capture_abort():
+    def signal_handler(signum, _):
+        signame = signal.Signals(signum).name
+        logger.warning(f'Received {signame}. Exiting...')
+        global running
+        running = False
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+def check_output_path(path):
+    if not os.path.exists(path):
+        os.mkdir(path)
     else:
-        if not os.path.isdir(output_path):
+        if not os.path.isdir(path):
             print("output folder is file, can't output results. Exit")
             sys.exit()
 
-    # any video source opencv understands 
-    # 0,1,... for usb cams, 'rtsp://...' for RTSP streams, /path/video.mp4 for video file
-    video_source = sys.argv[1] 
-    do_inferencing(video_source)
-    
-    #do_inferencing_single()
-
-
-
-def do_inferencing(source):
+def do_inferencing(args):
+    source = args.videosource
     if source.isdigit():
         source = int(source)
+
+    start_time = datetime.datetime.now()
+    time_prefix = start_time.strftime("%Y%m%d-%H%M")
+
+    output_filename = create_ouput_filename(source)
+    output_filename = args.output_path + "/" + time_prefix + "-" + yolov8_model + "-" + output_filename
+
     cap    = cv2.VideoCapture(source)
     width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps    = cap.get(cv2.CAP_PROP_FPS)
 
-    start_time = datetime.datetime.now()
-    time_prefix = start_time.strftime("%Y%m%d-%H%M")
-    output_filename = create_ouput_filename(source)
-    output_filename = 'out/' + time_prefix + "-" + yolov8_model + "-" + output_filename
-    print(output_filename)
     out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))    
-
-    cv2.namedWindow("output", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("output", 800, 600)
+    if args.preview:
+        cv2.namedWindow("output", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("output", 1024, 768)
     
     model = YOLO(yolov8_model)
+    
     while(cap.isOpened()):
         ret, frame = cap.read()
         if ret == True:
-            #res_plotted = segment_objects(frame, model) # if you want to work with prediction result
-            prediction = model.predict(frame)
-            res_plotted = prediction[0].plot()            
-            cv2.imshow('output', res_plotted)
+            res_plotted = segment_objects(frame, model) # if you want to work with prediction result
+            #prediction = model.predict(frame)
+            #res_plotted = prediction[0].plot()            
 
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                break 
+            if args.preview:
+                cv2.imshow('output', res_plotted)
+                if cv2.waitKey(25) & 0xFF == ord('q'):
+                    break 
             out.write(res_plotted) 
         else:
             break
@@ -89,19 +122,20 @@ def segment_objects(frame, model):
         if conf > 0.3:
             polyline = mask.astype(np.int32)
             predicted_class_id = seg[0].boxes[idx].cls.data[0].item()
-            pred_class = names[predicted_class_id]
-            x,y = centroid(polyline)
-            COLOR = (0,int(255/(predicted_class_id+1)),int(255/(predicted_class_id+1)))
-            COLOR2 = (50,int(255/(predicted_class_id+1)),int(255/(predicted_class_id+1)))
-            cv2.fillPoly(overlay,[polyline], COLOR)
-            cv2.putText(
-                overlay, 
-                f'{pred_class} ({round(float(conf)*100,2)}%)', 
-                (round(x), round(y)), 
-                cv2.FONT_HERSHEY_SIMPLEX, 
-                fontScale=1, 
-                color=COLOR2, 
-                thickness=5)
+            if predicted_class_id in class_list:
+                pred_class = names[predicted_class_id]
+                x,y = centroid(polyline)
+                COLOR = (100,int(255/(predicted_class_id+1)),int(255/(predicted_class_id+1)))
+                COLOR2 = (5,int(255/(predicted_class_id+1)),int(255/(predicted_class_id+1)))
+                cv2.fillPoly(overlay,[polyline], COLOR)
+                cv2.putText(
+                    overlay, 
+                    f'{pred_class} ({round(float(conf)*100,2)}%)', 
+                    (round(x), round(y)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    fontScale=1, 
+                    color=COLOR2, 
+                    thickness=5)
 
     img_out = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
     return img_out
@@ -112,43 +146,7 @@ def centroid(vertexes):
      _len = len(vertexes)
      _x = sum(_x_list) / _len
      _y = sum(_y_list) / _len
-     return(_x, _y)
+     return(_x, _y) 
 
-def do_inferencing_single():
-    source = "sample_images/carmel01.png"
-    model = YOLO(yolov8_model)
-    img_raw = cv2.imread(source, cv2.IMREAD_COLOR)
-    overlay = img_raw.copy() # overlay to add segmentation polygons
-    alpha = 0.4  # Transparency factor.
-    seg = model.predict(img_raw)
-    names = seg[0].names    
-
-    for idx, mask in enumerate(seg[0].masks.xy):
-        conf = seg[0].boxes[idx].conf.data[0].item()
-        if conf > 0.3:
-            polyline = mask.astype(np.int32)
-            predicted_class_id = seg[0].boxes[idx].cls.data[0].item()
-            pred_class = names[predicted_class_id]
-            x = np.mean(polyline[0,:])
-            y = np.mean(polyline[1,:])
-            print(str(x) + "," + str(y))
-            #x,y = centroid(polyline)
-            COLOR = (0,int(255/(predicted_class_id+1)),int(255/(predicted_class_id+1)))
-            COLOR2 = (50,int(255/(predicted_class_id+1)),int(255/(predicted_class_id+1)))
-            cv2.fillPoly(overlay,[polyline], COLOR)
-            cv2.putText(
-                overlay, 
-                f'{pred_class} ({round(float(conf)*100,2)}%)', 
-                (round(x), round(y)), 
-                cv2.FONT_HERSHEY_SIMPLEX, 
-                fontScale=1, 
-                color=COLOR2, 
-                thickness=5)
-
-    img_out = cv2.addWeighted(overlay, alpha, img_raw, 1 - alpha, 0)
-    cv2.namedWindow("output", cv2.WINDOW_NORMAL)
-    cv2.imshow('output', img_out)
-    cv2.waitKey()
-    cv2.destroyWindow("output") 
-
-main()
+if __name__ == '__main__':
+    main()
