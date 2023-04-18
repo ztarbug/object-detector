@@ -16,7 +16,14 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=lo
 logger = logging.getLogger()
 
 running = True
-class_list = [0,2]
+class_list = [0,1,2]
+heatmap_colors = {
+    0: ["PERSON", (102, 204, 0)], #(0, 204, 102)
+    1: ["BICYCLE", (255, 153, 102)],
+    2: ["CAR", (255, 0, 0)],
+    5: ["BUS", (0, 0, 255)],   
+    7: ["TRUCK", (153, 102, 255)]
+}
 
 dense_map = None
 
@@ -26,6 +33,7 @@ def main():
     arg_parser.add_argument('-m', '--model-size', choices=['n', 's', 'm', 'l', 'x'], default='n', help='the size of the model to use (nano, small, medium, large, xlarge); defaults to "nano"')
     arg_parser.add_argument('-p', '--preview', action='store_true', help='whether to show a live preview window, reduces performance slightly. If the window is in focus, press "q" to exit.')
     arg_parser.add_argument('-o', '--output-path', required=False, default="out", help='where to output processed video files')
+    arg_parser.add_argument('-heat', '--heatmap', required=False, default=False, help='create a heat map of detected objects')
     global args
     args = arg_parser.parse_args()
 
@@ -81,15 +89,21 @@ def do_inferencing(args):
     while(cap.isOpened()):
         ret, frame = cap.read()
         if ret == True:
-            res_plotted = segment_objects(frame, model) # if you want to work with prediction result
-            #prediction = model.predict(frame)
+            prediction = model.predict(frame)
+            res_plotted = segment_objects(frame, prediction) # if you want to work with prediction result
             #res_plotted = prediction[0].plot()            
+            if args.heatmap:
+                update_heatmap(res_plotted, prediction[0])
+                #res_plotted = res_plotted + 0.33 * dense_map
+                alpha = 0.1
+                res_plotted = cv2.addWeighted(dense_map.astype(np.uint8), alpha, res_plotted, 1-alpha,0)
+                #res_plotted[res_plotted > 255] = 255 # prevent color values > 255
 
             if args.preview:
                 cv2.imshow('output', res_plotted)
                 if cv2.waitKey(25) & 0xFF == ord('q'):
                     break 
-            out.write(res_plotted) 
+            #out.write(res_plotted) 
         else:
             break
 
@@ -97,6 +111,27 @@ def do_inferencing(args):
     print("Finished post processing in " + str(end_time - start_time))
     cap.release()
     cv2.destroyAllWindows()
+
+def update_heatmap(frame, prediction):
+    global dense_map
+
+    if(dense_map is None):
+        dense_map = np.zeros_like(frame)
+    
+    if prediction.masks is not None:
+        for idx, mask in enumerate(prediction.masks.xy):
+            conf = prediction.boxes[idx].conf.data[0].item()
+            if conf > 0.35:    
+                polyline = mask.astype(np.int32)
+                predicted_class_id = prediction.boxes[idx].cls.data[0].item()
+                if predicted_class_id in class_list:
+                    x,y = centroid(polyline)
+                    color = heatmap_colors[predicted_class_id][1]
+                    heatmap_entry = np.zeros_like(dense_map)
+                    heatmap_entry = cv2.circle(heatmap_entry, (int(x),int(y)), 10, color=color, thickness=-1)
+                    dense_map = dense_map + 0.1 * heatmap_entry # add layer for latest objects
+                    dense_map[dense_map > 255] = 255 # addition will eventuall reach max color level
+
 
 def create_ouput_filename(source):
     # based on which kind of source an according output filename is created here
@@ -110,11 +145,10 @@ def create_ouput_filename(source):
         return os.path.basename(source)
     return "unknown-source.mp4"
 
-def segment_objects(frame, model):
+def segment_objects(frame, seg):
 
     overlay = frame.copy() # overlay to add segmentation polygons
     alpha = 0.4  # Transparency factor.
-    seg = model.predict(frame)
     names = seg[0].names    
 
     for idx, mask in enumerate(seg[0].masks.xy):
